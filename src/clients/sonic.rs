@@ -67,7 +67,7 @@ pub struct SonicTxRecord {
 }
 
 #[async_trait]
-trait Sonic {
+pub trait Sonic {
     // ------------ SWAP API --------------
 
     async fn swap_exact_tokens_for_tokens(
@@ -180,6 +180,7 @@ trait Sonic {
     async fn get_swap_info(&self) -> CallResult<(SonicSwapInfo,)>;
 }
 
+#[async_trait]
 impl Sonic for Principal {
     async fn swap_exact_tokens_for_tokens(
         &self,

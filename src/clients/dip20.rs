@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use ic_cdk::api::call::CallResult;
+use ic_cdk::api::call::{call_with_payment, CallResult};
 use ic_cdk::call;
 use ic_cdk::export::candid::{CandidType, Deserialize, Nat, Principal};
 
@@ -48,8 +48,8 @@ pub trait Dip20 {
         to: Principal,
         value: Nat,
     ) -> CallResult<(Dip20TxReceipt,)>;
-    async fn approve(&self, spender: Principal, value: Principal) -> CallResult<(Dip20TxReceipt,)>;
-    async fn mint(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)>;
+    async fn approve(&self, spender: Principal, value: Nat) -> CallResult<(Dip20TxReceipt,)>;
+    async fn mint(&self, to: Principal, amount: Nat, cycles: u64) -> CallResult<(Dip20TxReceipt,)>;
     async fn burn(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)>;
 
     async fn set_name(&self, name: String) -> CallResult<()>;
@@ -78,6 +78,7 @@ pub trait Dip20 {
     async fn get_user_approvals(&self, who: Principal) -> CallResult<(Vec<(Principal, Nat)>,)>;
 }
 
+#[async_trait]
 impl Dip20 for Principal {
     async fn transfer(&self, to: Principal, value: Nat) -> CallResult<(Dip20TxReceipt,)> {
         call(*self, "transfer", (to, value)).await
@@ -92,12 +93,12 @@ impl Dip20 for Principal {
         call(*self, "transferFrom", (from, to, value)).await
     }
 
-    async fn approve(&self, spender: Principal, value: Principal) -> CallResult<(Dip20TxReceipt,)> {
+    async fn approve(&self, spender: Principal, value: Nat) -> CallResult<(Dip20TxReceipt,)> {
         call(*self, "approve", (spender, value)).await
     }
 
-    async fn mint(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)> {
-        call(*self, "mint", (to, amount)).await
+    async fn mint(&self, to: Principal, amount: Nat, cycles: u64) -> CallResult<(Dip20TxReceipt,)> {
+        call_with_payment(*self, "mint", (to, amount), cycles).await
     }
 
     async fn burn(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)> {
