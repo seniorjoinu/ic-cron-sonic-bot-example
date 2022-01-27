@@ -15,8 +15,8 @@ pub struct MarketOrder {
 
 #[derive(CandidType, Deserialize, Clone)]
 pub struct LimitOrder {
-    pub when_give_to_take_ratio_reaches: TargetPrice,
-    pub execute_market_order: MarketOrder,
+    pub target_price_condition: TargetPrice,
+    pub market_order: MarketOrder,
 }
 
 #[derive(CandidType, Deserialize, Clone)]

@@ -1,0 +1,53 @@
+type RemoteCallEndpoint = record {
+    canister_id : principal;
+    method_name : text;
+};
+
+type RemoteCallPayload = record {
+    endpoint : RemoteCallEndpoint;
+    args_raw : blob;
+    cycles : nat64;
+};
+
+type Currency = variant {
+    XTC;
+    WICP;
+};
+
+type OrderDirective = variant {
+    GiveExact : nat;
+    TakeExact : nat;
+};
+
+type TargetPrice = variant {
+    MoreThan : float64;
+    LessThan : float64;
+};
+
+type MarketOrder = record {
+    give_currency : Currency;
+    take_currency : Currency;
+    directive : OrderDirective;
+};
+
+type LimitOrder = record {
+    target_price_condition : TargetPrice;
+    market_order : MarketOrder;
+};
+
+type Order = variant {
+    Market : MarketOrder;
+    Limit : LimitOrder;
+};
+
+service : (principal) -> {
+    "proxy_call" : (RemoteCallPayload) -> ();
+    "deposit" : (Currency, nat) -> ();
+    "withdraw" : (Currency, nat) -> ();
+    "transfer" : (Currency, principal, nat) -> ();
+    "mint_xtc_with_own_cycles" : (nat64) -> ();
+    "my_token_balance" : (Currency) -> (nat) query;
+    "my_sonic_balance" : (Currency) -> (nat) query;
+    "get_swap_price" : (Currency, Currency) -> (float64) query;
+    "add_order" : (Order) -> opt nat64;
+}

@@ -37,7 +37,7 @@ pub async fn proxy_call(payload: RemoteCallPayload) {
 }
 
 #[update(guard = controller_guard)]
-pub async fn deposit(currency: Currency, amount: Nat) -> Nat {
+pub async fn deposit(currency: Currency, amount: Nat) {
     let state = *get_state();
     let token = token_id_by_currency(currency);
 
@@ -48,28 +48,16 @@ pub async fn deposit(currency: Currency, amount: Nat) -> Nat {
     Sonic::deposit(&state.sonic_swap_canister, token, amount)
         .await
         .unwrap_or_trap("Unable to deposit tokens");
-
-    let (balance,) = Sonic::balance_of(&state.sonic_swap_canister, token.to_text(), id())
-        .await
-        .unwrap_or_trap("Unable to fetch my balance from Sonic");
-
-    balance
 }
 
 #[update(guard = controller_guard)]
-pub async fn withdraw(currency: Currency, amount: Nat) -> Nat {
+pub async fn withdraw(currency: Currency, amount: Nat) {
     let state = *get_state();
     let token = token_id_by_currency(currency);
 
     Sonic::withdraw(&state.sonic_swap_canister, token, amount)
         .await
         .unwrap_or_trap("Unable to withdraw tokens");
-
-    let (balance,) = Sonic::balance_of(&state.sonic_swap_canister, token.to_text(), id())
-        .await
-        .unwrap_or_trap("Unable to fetch my balance from Sonic");
-
-    balance
 }
 
 #[update(guard = controller_guard)]
@@ -213,15 +201,15 @@ async fn execute_limit_order(order: LimitOrder) -> bool {
     let state = *get_state();
 
     let price = get_swap_price(
-        order.execute_market_order.give_currency.clone(),
-        order.execute_market_order.take_currency.clone(),
+        order.market_order.give_currency.clone(),
+        order.market_order.take_currency.clone(),
     )
     .await;
 
-    match order.when_give_to_take_ratio_reaches {
+    match order.target_price_condition {
         TargetPrice::MoreThan(target_price) => {
             if price >= target_price {
-                execute_market_order(order.execute_market_order).await;
+                execute_market_order(order.market_order).await;
                 true
             } else {
                 false
@@ -229,7 +217,7 @@ async fn execute_limit_order(order: LimitOrder) -> bool {
         }
         TargetPrice::LessThan(target_price) => {
             if price <= target_price {
-                execute_market_order(order.execute_market_order).await;
+                execute_market_order(order.market_order).await;
                 true
             } else {
                 false
