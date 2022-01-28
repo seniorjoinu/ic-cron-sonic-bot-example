@@ -2,23 +2,23 @@ mod clients;
 mod common;
 
 use crate::clients::dip20::Dip20;
-use crate::clients::sonic::Sonic;
+use crate::clients::sonic::{Sonic, SonicTxReceipt};
 use crate::common::guards::controller_guard;
 use crate::common::types::{Currency, LimitOrder, MarketOrder, Order, OrderDirective, TargetPrice};
 use crate::common::utils::UnwrapOrTrap;
 use bigdecimal::num_bigint::{BigInt, ToBigInt};
+use bigdecimal::num_traits::Pow;
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive};
 use ic_cdk::api::call::{call_raw, msg_cycles_available};
 use ic_cdk::api::{canister_balance, time};
 use ic_cdk::export::candid::{export_service, CandidType, Deserialize, Int, Nat, Principal};
 use ic_cdk::storage::{stable_restore, stable_save};
-use ic_cdk::{caller, id};
+use ic_cdk::{caller, id, trap};
 use ic_cdk_macros::{heartbeat, init, pre_upgrade, query, update};
 use ic_cron::implement_cron;
 use ic_cron::types::{Iterations, SchedulingInterval, TaskId};
+use std::fmt::format;
 use union_utils::RemoteCallPayload;
-
-// У меня есть сминченые XTC, но я не могу свапнуть их в WICP
 
 #[update(guard = controller_guard)]
 pub async fn proxy_call(payload: RemoteCallPayload) {
@@ -110,18 +110,10 @@ pub fn my_cycles_balance() -> u64 {
     canister_balance()
 }
 
-async fn _get_swap_price(give_currency: Currency, take_currency: Currency) -> BigDecimal {
+async fn get_swap_price_internal(give_currency: Currency, take_currency: Currency) -> BigDecimal {
     let state = *get_state();
     let give_token = token_id_by_currency(give_currency);
     let take_token = token_id_by_currency(take_currency);
-
-    let (give_token_decimals,) = Dip20::decimals(&give_token)
-        .await
-        .unwrap_or_trap("Unable to fetch give_token decimals");
-
-    let (take_token_decimals,) = Dip20::decimals(&take_token)
-        .await
-        .unwrap_or_trap("Unable to fetch take_token decimals");
 
     let (pair_opt,) = Sonic::get_pair(&state.sonic_swap_canister, give_token, take_token)
         .await
@@ -131,18 +123,33 @@ async fn _get_swap_price(give_currency: Currency, take_currency: Currency) -> Bi
 
     let give_reserve = BigDecimal::from(pair.reserve0.0.to_bigint().unwrap());
     let take_reserve = BigDecimal::from(pair.reserve1.0.to_bigint().unwrap());
-    let give_decimals_divider = BigDecimal::from(10u64.pow(give_token_decimals.to_u32().unwrap()));
-    let take_decimals_divider = BigDecimal::from(10u64.pow(take_token_decimals.to_u32().unwrap()));
 
-    (give_reserve / give_decimals_divider) / (take_reserve / take_decimals_divider)
+    give_reserve / take_reserve
 }
 
 #[update]
 pub async fn get_swap_price(give_currency: Currency, take_currency: Currency) -> f64 {
-    _get_swap_price(give_currency, take_currency)
+    let give_token = token_id_by_currency(give_currency.clone());
+    let take_token = token_id_by_currency(take_currency.clone());
+
+    let price_bd = get_swap_price_internal(give_currency, take_currency).await;
+
+    let (give_token_decimals,) = Dip20::decimals(&give_token)
         .await
-        .to_f64()
-        .unwrap()
+        .unwrap_or_trap("Unable to fetch give_token decimals");
+
+    let (take_token_decimals,) = Dip20::decimals(&take_token)
+        .await
+        .unwrap_or_trap("Unable to fetch take_token decimals");
+
+    let decimals_dif = (give_token_decimals - take_token_decimals)
+        .to_i32()
+        .unwrap();
+    let decimals_modifier = 10f64.pow(decimals_dif);
+
+    // TODO: возвращает неверную цену
+
+    price_bd.to_f64().unwrap() * decimals_modifier
 }
 
 fn token_id_by_currency(currency: Currency) -> Principal {
@@ -208,8 +215,6 @@ pub fn tick() {
 }
 
 async fn execute_limit_order(order: LimitOrder) -> bool {
-    let state = *get_state();
-
     let price = get_swap_price(
         order.market_order.give_currency.clone(),
         order.market_order.take_currency.clone(),
@@ -236,23 +241,24 @@ async fn execute_limit_order(order: LimitOrder) -> bool {
     }
 }
 
-async fn execute_market_order(order: MarketOrder) {
+async fn execute_market_order(order: MarketOrder) -> Nat {
     let state = *get_state();
 
     let give_token = token_id_by_currency(order.give_currency.clone());
     let take_token = token_id_by_currency(order.take_currency.clone());
 
-    let slippage_bd = BigDecimal::from_f64(0.997f64).unwrap(); // can tolerate 0.03% slippage
+    let slippage_bd = BigDecimal::from_f64(0.99f64).unwrap(); // can tolerate 1% slippage
     let deadline = Int(BigInt::from(time() + 1_000_000_000 * 20)); // 20 seconds til now
     let this = id();
 
-    let price_bd = _get_swap_price(order.give_currency, order.take_currency).await;
+    let price_bd = get_swap_price_internal(order.give_currency, order.take_currency).await;
 
     match order.directive {
         OrderDirective::GiveExact(give_amount) => {
             let give_amount_bd = BigDecimal::from(give_amount.0.to_bigint().unwrap());
 
-            let take_amount_min_bd = give_amount_bd * price_bd * slippage_bd;
+            let take_amount_min_bd = give_amount_bd / price_bd * slippage_bd;
+
             let take_amount_min = Nat(take_amount_min_bd
                 .to_bigint()
                 .unwrap()
@@ -268,12 +274,15 @@ async fn execute_market_order(order: MarketOrder) {
                 deadline,
             )
             .await
-            .unwrap_or_trap("Unable to swap exact tokens");
+            .unwrap_or_trap("Unable to swap exact tokens")
+            .0
+            .to_res()
+            .unwrap_or_trap("Unable to swap exact tokens")
         }
         OrderDirective::TakeExact(take_amount) => {
             let take_amount_bd = BigDecimal::from(take_amount.0.to_bigint().unwrap());
 
-            let give_amount_max_bd = take_amount_bd / price_bd / slippage_bd;
+            let give_amount_max_bd = take_amount_bd * price_bd * slippage_bd;
             let give_amount_max = Nat(give_amount_max_bd
                 .to_bigint()
                 .unwrap()
@@ -289,7 +298,10 @@ async fn execute_market_order(order: MarketOrder) {
                 deadline,
             )
             .await
-            .unwrap_or_trap("Unable to swap to exact tokens");
+            .unwrap_or_trap("Unable to swap to exact tokens")
+            .0
+            .to_res()
+            .unwrap_or_trap("Unable to swap exact tokens")
         }
     }
 }

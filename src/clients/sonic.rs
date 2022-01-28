@@ -43,7 +43,22 @@ pub struct SonicSwapInfo {
     pub pairs: Vec<SonicPairInfo>,
 }
 
-pub type SonicTxReceipt = Result<Nat, String>;
+#[derive(CandidType, Deserialize)]
+pub enum MotokoResult<T, E> {
+    ok(T),
+    err(E),
+}
+
+pub type SonicTxReceipt = MotokoResult<Nat, String>;
+
+impl<T, E> MotokoResult<T, E> {
+    pub fn to_res(self) -> Result<T, E> {
+        match self {
+            MotokoResult::ok(t) => Ok(t),
+            MotokoResult::err(e) => Err(e),
+        }
+    }
+}
 
 #[derive(CandidType, Deserialize)]
 pub enum SonicDetailValue {
