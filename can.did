@@ -46,8 +46,9 @@ service : (principal) -> {
     "withdraw" : (Currency, nat) -> ();
     "transfer" : (Currency, principal, nat) -> ();
     "mint_xtc_with_own_cycles" : (nat64) -> ();
-    "my_token_balance" : (Currency) -> (nat) query;
-    "my_sonic_balance" : (Currency) -> (nat) query;
-    "get_swap_price" : (Currency, Currency) -> (float64) query;
-    "add_order" : (Order) -> opt nat64;
+    "my_token_balance" : (Currency) -> (nat);
+    "my_sonic_balance" : (Currency) -> (nat);
+    "my_cycles_balance" : () -> (nat64) query;
+    "get_swap_price" : (Currency, Currency) -> (float64);
+    "add_order" : (Order) -> (opt nat64);
 }

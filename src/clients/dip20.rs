@@ -34,7 +34,11 @@ pub enum Dip20TxError {
     ErrorTo,
     Other,
     BlockUsed,
+    FetchRateFailed,
+    NotifyDfxFailed,
+    UnexpectedCyclesResponse,
     AmountTooSmall,
+    InsufficientXTCFee,
 }
 
 pub type Dip20TxReceipt = Result<Nat, Dip20TxError>;
@@ -106,7 +110,7 @@ impl Dip20 for Principal {
     }
 
     async fn set_name(&self, name: String) -> CallResult<()> {
-        call(*self, "setName", (name)).await
+        call(*self, "setName", (name,)).await
     }
 
     async fn name(&self) -> CallResult<(String,)> {

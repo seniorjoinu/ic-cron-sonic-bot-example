@@ -8,15 +8,17 @@ use crate::common::types::{Currency, LimitOrder, MarketOrder, Order, OrderDirect
 use crate::common::utils::UnwrapOrTrap;
 use bigdecimal::num_bigint::{BigInt, ToBigInt};
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive};
-use ic_cdk::api::call::call_raw;
-use ic_cdk::api::time;
+use ic_cdk::api::call::{call_raw, msg_cycles_available};
+use ic_cdk::api::{canister_balance, time};
 use ic_cdk::export::candid::{export_service, CandidType, Deserialize, Int, Nat, Principal};
-use ic_cdk::id;
 use ic_cdk::storage::{stable_restore, stable_save};
+use ic_cdk::{caller, id};
 use ic_cdk_macros::{heartbeat, init, pre_upgrade, query, update};
 use ic_cron::implement_cron;
 use ic_cron::types::{Iterations, SchedulingInterval, TaskId};
 use union_utils::RemoteCallPayload;
+
+// У меня есть сминченые XTC, но я не могу свапнуть их в WICP
 
 #[update(guard = controller_guard)]
 pub async fn proxy_call(payload: RemoteCallPayload) {
@@ -79,7 +81,7 @@ pub async fn mint_xtc_with_own_cycles(amount: u64) {
         .unwrap_or_trap("Unable to mint XTC with cycles");
 }
 
-#[query]
+#[update]
 pub async fn my_token_balance(currency: Currency) -> Nat {
     let state = get_state();
     let token = token_id_by_currency(currency);
@@ -91,7 +93,7 @@ pub async fn my_token_balance(currency: Currency) -> Nat {
     balance
 }
 
-#[query]
+#[update]
 pub async fn my_sonic_balance(currency: Currency) -> Nat {
     let state = get_state();
     let token = token_id_by_currency(currency);
@@ -101,6 +103,11 @@ pub async fn my_sonic_balance(currency: Currency) -> Nat {
         .unwrap_or_trap("Unable to fetch my balance at Sonic");
 
     balance
+}
+
+#[query]
+pub fn my_cycles_balance() -> u64 {
+    canister_balance()
 }
 
 async fn _get_swap_price(give_currency: Currency, take_currency: Currency) -> BigDecimal {
@@ -122,12 +129,15 @@ async fn _get_swap_price(give_currency: Currency, take_currency: Currency) -> Bi
 
     let pair = pair_opt.unwrap();
 
-    (BigDecimal::from(pair.reserve0.0.to_bigint().unwrap()) / BigDecimal::from(give_token_decimals))
-        / (BigDecimal::from(pair.reserve1.0.to_bigint().unwrap())
-            / BigDecimal::from(take_token_decimals))
+    let give_reserve = BigDecimal::from(pair.reserve0.0.to_bigint().unwrap());
+    let take_reserve = BigDecimal::from(pair.reserve1.0.to_bigint().unwrap());
+    let give_decimals_divider = BigDecimal::from(10u64.pow(give_token_decimals.to_u32().unwrap()));
+    let take_decimals_divider = BigDecimal::from(10u64.pow(take_token_decimals.to_u32().unwrap()));
+
+    (give_reserve / give_decimals_divider) / (take_reserve / take_decimals_divider)
 }
 
-#[query]
+#[update]
 pub async fn get_swap_price(give_currency: Currency, take_currency: Currency) -> f64 {
     _get_swap_price(give_currency, take_currency)
         .await
@@ -145,10 +155,10 @@ fn token_id_by_currency(currency: Currency) -> Principal {
 }
 
 #[update(guard = controller_guard)]
-pub fn add_order(order: Order) -> Option<TaskId> {
+pub async fn add_order(order: Order) -> Option<TaskId> {
     match order {
         Order::Market(market_order) => {
-            execute_market_order(market_order);
+            execute_market_order(market_order).await;
 
             None
         }
@@ -299,14 +309,14 @@ pub fn init(controller: Principal) {
 }
 
 #[derive(CandidType, Deserialize, Clone, Copy)]
-struct State {
+pub struct State {
     pub xtc_canister: Principal,
     pub wicp_canister: Principal,
     pub sonic_swap_canister: Principal,
     pub controller: Principal,
 }
 
-static mut STATE: Option<State> = None;
+pub static mut STATE: Option<State> = None;
 
 pub fn get_state() -> &'static mut State {
     unsafe {
