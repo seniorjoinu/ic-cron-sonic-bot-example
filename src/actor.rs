@@ -142,12 +142,10 @@ pub async fn get_swap_price(give_currency: Currency, take_currency: Currency) ->
         .await
         .unwrap_or_trap("Unable to fetch take_token decimals");
 
-    let decimals_dif = (give_token_decimals - take_token_decimals)
-        .to_i32()
-        .unwrap();
-    let decimals_modifier = 10f64.pow(decimals_dif);
+    let decimals_dif =
+        give_token_decimals.to_i32().unwrap() - take_token_decimals.to_i32().unwrap();
 
-    // TODO: возвращает неверную цену
+    let decimals_modifier = 10f64.pow(decimals_dif);
 
     price_bd.to_f64().unwrap() * decimals_modifier
 }
