@@ -26,19 +26,15 @@ pub struct Dip20TokenInfo {
 
 #[derive(CandidType, Deserialize, Debug)]
 pub enum Dip20TxError {
-    InsufficientAllowance,
     InsufficientBalance,
-    ErrorOperationStyle,
+    InsufficientAllowance,
     Unauthorized,
     LedgerTrap,
+    AmountTooSmall,
+    BlockUsed,
+    ErrorOperationStyle,
     ErrorTo,
     Other,
-    BlockUsed,
-    FetchRateFailed,
-    NotifyDfxFailed,
-    UnexpectedCyclesResponse,
-    AmountTooSmall,
-    InsufficientXTCFee,
 }
 
 pub type Dip20TxReceipt = Result<Nat, Dip20TxError>;

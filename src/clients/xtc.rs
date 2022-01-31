@@ -1,9 +1,7 @@
-use crate::clients::dip20::Dip20TxReceipt;
-use crate::Nat;
 use async_trait::async_trait;
 use ic_cdk::api::call::{call_with_payment, CallResult};
 use ic_cdk::call;
-use ic_cdk::export::candid::{CandidType, Deserialize, Principal};
+use ic_cdk::export::candid::{CandidType, Deserialize, Nat, Principal};
 
 #[derive(CandidType, Deserialize)]
 pub struct XTCBurnPayload {
@@ -18,17 +16,24 @@ pub enum XTCBurnError {
     NotSufficientLiquidity,
 }
 
-pub type XTCBurnResult = Result<u64, XTCBurnError>;
+pub type XTCBurnResult = Result<Nat, XTCBurnError>;
+
+#[derive(CandidType, Deserialize)]
+pub enum XTCMintError {
+    NotSufficientLiquidity,
+}
+
+pub type XTCMintResult = Result<Nat, XTCMintError>;
 
 #[async_trait]
 pub trait XTC {
-    async fn mint(&self, to: Principal, cycles: u64) -> CallResult<(Dip20TxReceipt,)>;
+    async fn mint(&self, to: Principal, cycles: u64) -> CallResult<(XTCMintResult,)>;
     async fn burn(&self, payload: XTCBurnPayload) -> CallResult<(XTCBurnResult,)>;
 }
 
 #[async_trait]
 impl XTC for Principal {
-    async fn mint(&self, to: Principal, cycles: u64) -> CallResult<(Dip20TxReceipt,)> {
+    async fn mint(&self, to: Principal, cycles: u64) -> CallResult<(XTCMintResult,)> {
         call_with_payment(*self, "mint", (to, Nat::from(0)), cycles).await
     }
 

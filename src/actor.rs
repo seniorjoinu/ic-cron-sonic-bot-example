@@ -14,7 +14,7 @@ use ic_cdk::api::{canister_balance, time};
 use ic_cdk::export::candid::{export_service, CandidType, Deserialize, Int, Nat, Principal};
 use ic_cdk::id;
 use ic_cdk::storage::{stable_restore, stable_save};
-use ic_cdk_macros::{heartbeat, init, pre_upgrade, query, update};
+use ic_cdk_macros::{heartbeat, init, post_upgrade, pre_upgrade, query, update};
 use ic_cron::implement_cron;
 use ic_cron::types::{Iterations, SchedulingInterval, TaskId};
 
@@ -311,6 +311,20 @@ async fn execute_market_order(order: MarketOrder) -> Nat {
 
 // -------------------- STATE ---------------------
 
+#[derive(CandidType, Deserialize, Clone, Copy)]
+pub struct State {
+    pub xtc_canister: Principal,
+    pub wicp_canister: Principal,
+    pub sonic_swap_canister: Principal,
+    pub controller: Principal,
+}
+
+pub static mut STATE: Option<State> = None;
+
+pub fn get_state() -> &'static mut State {
+    unsafe { STATE.as_mut().unwrap() }
+}
+
 #[init]
 pub fn init(controller: Principal) {
     unsafe {
@@ -323,33 +337,23 @@ pub fn init(controller: Principal) {
     }
 }
 
-#[derive(CandidType, Deserialize, Clone, Copy)]
-pub struct State {
-    pub xtc_canister: Principal,
-    pub wicp_canister: Principal,
-    pub sonic_swap_canister: Principal,
-    pub controller: Principal,
-}
-
-pub static mut STATE: Option<State> = None;
-
-pub fn get_state() -> &'static mut State {
+#[pre_upgrade]
+pub fn pre_upgrade_hook() {
     unsafe {
-        match STATE.as_mut() {
-            None => {
-                let (state,) = stable_restore().unwrap();
-                STATE = Some(state);
-
-                get_state()
-            }
-            Some(s) => s,
-        }
+        stable_save((STATE.unwrap(), get_cron_state().clone()))
+            .unwrap_or_trap("Unable to save the state to stable memory");
     }
 }
 
-#[pre_upgrade]
-pub fn pre_upgrade_hook() {
-    unsafe { stable_save((STATE.unwrap(),)).unwrap() }
+#[post_upgrade]
+pub fn post_upgrade_hook() {
+    unsafe {
+        let (state, cron_state) =
+            stable_restore().unwrap_or_trap("Unable to restore the state from stable memory");
+
+        STATE = Some(state);
+        set_cron_state(cron_state);
+    }
 }
 
 implement_cron!();
