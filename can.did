@@ -40,7 +40,7 @@ type Order = variant {
     Limit : LimitOrder;
 };
 
-service : (principal) -> {
+service : {
     "proxy_call" : (RemoteCallPayload) -> ();
     "deposit" : (Currency, nat) -> ();
     "withdraw" : (Currency, nat) -> ();

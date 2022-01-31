@@ -2,41 +2,21 @@ mod clients;
 mod common;
 
 use crate::clients::dip20::Dip20;
-use crate::clients::sonic::{Sonic, SonicTxReceipt};
+use crate::clients::sonic::Sonic;
+use crate::clients::xtc::{XTCBurnPayload, XTC};
 use crate::common::guards::controller_guard;
 use crate::common::types::{Currency, LimitOrder, MarketOrder, Order, OrderDirective, TargetPrice};
 use crate::common::utils::UnwrapOrTrap;
 use bigdecimal::num_bigint::{BigInt, ToBigInt};
 use bigdecimal::num_traits::Pow;
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive};
-use ic_cdk::api::call::{call_raw, msg_cycles_available};
 use ic_cdk::api::{canister_balance, time};
 use ic_cdk::export::candid::{export_service, CandidType, Deserialize, Int, Nat, Principal};
+use ic_cdk::id;
 use ic_cdk::storage::{stable_restore, stable_save};
-use ic_cdk::{caller, id, trap};
 use ic_cdk_macros::{heartbeat, init, pre_upgrade, query, update};
 use ic_cron::implement_cron;
 use ic_cron::types::{Iterations, SchedulingInterval, TaskId};
-use std::fmt::format;
-use union_utils::RemoteCallPayload;
-
-#[update(guard = controller_guard)]
-pub async fn proxy_call(payload: RemoteCallPayload) {
-    call_raw(
-        payload.endpoint.canister_id,
-        payload.endpoint.method_name.as_str(),
-        payload.args_raw,
-        payload.cycles,
-    )
-    .await
-    .unwrap_or_trap(
-        format!(
-            "Unable to perform proxy_call to {:?}",
-            payload.endpoint.method_name
-        )
-        .as_str(),
-    );
-}
 
 #[update(guard = controller_guard)]
 pub async fn deposit(currency: Currency, amount: Nat) {
@@ -45,11 +25,16 @@ pub async fn deposit(currency: Currency, amount: Nat) {
 
     Dip20::approve(&token, state.sonic_swap_canister, amount.clone())
         .await
-        .unwrap_or_trap("Unable to approve tokens");
+        .unwrap_or_trap("Unable to approve tokens: call failed")
+        .0
+        .unwrap_or_trap("Unable to approve tokens: internal error");
 
     Sonic::deposit(&state.sonic_swap_canister, token, amount)
         .await
-        .unwrap_or_trap("Unable to deposit tokens");
+        .unwrap_or_trap("Unable to deposit tokens: call failed")
+        .0
+        .to_res()
+        .unwrap_or_trap("Unable to deposit tokens: internal error");
 }
 
 #[update(guard = controller_guard)]
@@ -59,7 +44,10 @@ pub async fn withdraw(currency: Currency, amount: Nat) {
 
     Sonic::withdraw(&state.sonic_swap_canister, token, amount)
         .await
-        .unwrap_or_trap("Unable to withdraw tokens");
+        .unwrap_or_trap("Unable to withdraw tokens: call failed")
+        .0
+        .to_res()
+        .unwrap_or_trap("Unable to withdraw tokens: internal error");
 }
 
 #[update(guard = controller_guard)]
@@ -69,16 +57,35 @@ pub async fn transfer(currency: Currency, to: Principal, amount: Nat) {
 
     Dip20::transfer(&token, to, amount)
         .await
-        .unwrap_or_trap("Unable to transfer tokens");
+        .unwrap_or_trap("Unable to transfer tokens: call failed")
+        .0
+        .unwrap_or_trap("Unable to transfer tokens: internal error");
 }
 
 #[update(guard = controller_guard)]
 pub async fn mint_xtc_with_own_cycles(amount: u64) {
     let state = get_state();
 
-    Dip20::mint(&state.xtc_canister, id(), Nat::from(0), amount)
+    XTC::mint(&state.xtc_canister, id(), amount)
         .await
-        .unwrap_or_trap("Unable to mint XTC with cycles");
+        .unwrap_or_trap("Unable to mint XTC with cycles: call failed")
+        .0
+        .unwrap_or_trap("Unable to mint XTC with cycles: internal error");
+}
+
+#[update(guard = controller_guard)]
+pub async fn burn_xtc_for_own_cycles(amount: u64) {
+    let state = get_state();
+    let payload = XTCBurnPayload {
+        canister_id: id(),
+        amount,
+    };
+
+    XTC::burn(&state.xtc_canister, payload)
+        .await
+        .unwrap_or_trap("Unable to burn XTC for cycles: call failed")
+        .0
+        .unwrap_or_trap("Unable to burn XTC for cycles: internal error");
 }
 
 #[update]
@@ -171,7 +178,6 @@ pub async fn add_order(order: Order) -> Option<TaskId> {
             // we need to somehow freeze tokens spent for limit orders
 
             let task_id = cron_enqueue(
-                0,
                 limit_order,
                 SchedulingInterval {
                     delay_nano: 0,
@@ -198,7 +204,6 @@ pub fn tick() {
 
             if !res {
                 cron_enqueue(
-                    0,
                     limit_order,
                     SchedulingInterval {
                         delay_nano: 0,
@@ -272,10 +277,10 @@ async fn execute_market_order(order: MarketOrder) -> Nat {
                 deadline,
             )
             .await
-            .unwrap_or_trap("Unable to swap exact tokens")
+            .unwrap_or_trap("Unable to swap exact tokens: call failed")
             .0
             .to_res()
-            .unwrap_or_trap("Unable to swap exact tokens")
+            .unwrap_or_trap("Unable to swap exact tokens: internal error")
         }
         OrderDirective::TakeExact(take_amount) => {
             let take_amount_bd = BigDecimal::from(take_amount.0.to_bigint().unwrap());
@@ -296,10 +301,10 @@ async fn execute_market_order(order: MarketOrder) -> Nat {
                 deadline,
             )
             .await
-            .unwrap_or_trap("Unable to swap to exact tokens")
+            .unwrap_or_trap("Unable to swap to exact tokens: call failed")
             .0
             .to_res()
-            .unwrap_or_trap("Unable to swap exact tokens")
+            .unwrap_or_trap("Unable to swap exact tokens: internal error")
         }
     }
 }

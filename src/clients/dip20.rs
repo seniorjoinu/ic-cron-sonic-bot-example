@@ -24,7 +24,7 @@ pub struct Dip20TokenInfo {
     pub feeTo: Principal,
 }
 
-#[derive(CandidType, Deserialize)]
+#[derive(CandidType, Deserialize, Debug)]
 pub enum Dip20TxError {
     InsufficientAllowance,
     InsufficientBalance,
@@ -53,8 +53,8 @@ pub trait Dip20 {
         value: Nat,
     ) -> CallResult<(Dip20TxReceipt,)>;
     async fn approve(&self, spender: Principal, value: Nat) -> CallResult<(Dip20TxReceipt,)>;
-    async fn mint(&self, to: Principal, amount: Nat, cycles: u64) -> CallResult<(Dip20TxReceipt,)>;
-    async fn burn(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)>;
+    async fn mint(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)>;
+    async fn burn(&self, amount: Nat) -> CallResult<(Dip20TxReceipt,)>;
 
     async fn set_name(&self, name: String) -> CallResult<()>;
     async fn name(&self) -> CallResult<(String,)>;
@@ -101,12 +101,12 @@ impl Dip20 for Principal {
         call(*self, "approve", (spender, value)).await
     }
 
-    async fn mint(&self, to: Principal, amount: Nat, cycles: u64) -> CallResult<(Dip20TxReceipt,)> {
-        call_with_payment(*self, "mint", (to, amount), cycles).await
+    async fn mint(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)> {
+        call(*self, "mint", (to, amount)).await
     }
 
-    async fn burn(&self, to: Principal, amount: Nat) -> CallResult<(Dip20TxReceipt,)> {
-        call(*self, "burn", (to, amount)).await
+    async fn burn(&self, amount: Nat) -> CallResult<(Dip20TxReceipt,)> {
+        call(*self, "burn", (amount,)).await
     }
 
     async fn set_name(&self, name: String) -> CallResult<()> {

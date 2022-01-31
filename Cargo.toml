@@ -9,10 +9,9 @@ crate-type = ["cdylib"]
 path = "src/actor.rs"
 
 [dependencies]
-ic-cdk = "0.3.3"
-ic-cdk-macros = "0.3.3"
+ic-cdk = "0.3"
+ic-cdk-macros = "0.3"
 serde = "1.0"
-ic-cron = "0.4.1"
 async-trait = "0.1"
-union-utils = "0.1"
 bigdecimal = "0.3"
+ic-cron = "0.5.1"

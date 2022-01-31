@@ -43,7 +43,7 @@ pub struct SonicSwapInfo {
     pub pairs: Vec<SonicPairInfo>,
 }
 
-#[derive(CandidType, Deserialize)]
+#[derive(CandidType, Deserialize, Debug)]
 pub enum MotokoResult<T, E> {
     ok(T),
     err(E),
@@ -60,7 +60,7 @@ impl<T, E> MotokoResult<T, E> {
     }
 }
 
-#[derive(CandidType, Deserialize)]
+#[derive(CandidType, Deserialize, Debug)]
 pub enum SonicDetailValue {
     I64(i64),
     U64(u64),
