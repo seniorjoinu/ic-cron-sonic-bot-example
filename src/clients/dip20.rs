@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use ic_cdk::api::call::{call_with_payment, CallResult};
+use ic_cdk::api::call::CallResult;
 use ic_cdk::call;
 use ic_cdk::export::candid::{CandidType, Deserialize, Nat, Principal};
 

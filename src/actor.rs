@@ -6,7 +6,6 @@ use crate::clients::sonic::Sonic;
 use crate::clients::xtc::{XTCBurnPayload, XTC};
 use crate::common::guards::controller_guard;
 use crate::common::types::{Currency, LimitOrder, MarketOrder, Order, OrderDirective, TargetPrice};
-use crate::common::utils::UnwrapOrTrap;
 use bigdecimal::num_bigint::{BigInt, ToBigInt};
 use bigdecimal::num_traits::Pow;
 use bigdecimal::{BigDecimal, FromPrimitive, ToPrimitive};
@@ -25,41 +24,29 @@ pub async fn deposit(currency: Currency, amount: Nat) {
 
     Dip20::approve(&token, state.sonic_swap_canister, amount.clone())
         .await
-        .unwrap_or_trap("Unable to approve tokens: call failed")
+        .expect("Unable to approve tokens: call failed")
         .0
-        .unwrap_or_trap("Unable to approve tokens: internal error");
+        .expect("Unable to approve tokens: internal error");
 
     Sonic::deposit(&state.sonic_swap_canister, token, amount)
         .await
-        .unwrap_or_trap("Unable to deposit tokens: call failed")
+        .expect("Unable to deposit tokens: call failed")
         .0
         .to_res()
-        .unwrap_or_trap("Unable to deposit tokens: internal error");
+        .expect("Unable to deposit tokens: internal error");
 }
 
 #[update(guard = controller_guard)]
 pub async fn withdraw(currency: Currency, amount: Nat) {
-    let state = *get_state();
+    let state = get_state();
     let token = token_id_by_currency(currency);
 
     Sonic::withdraw(&state.sonic_swap_canister, token, amount)
         .await
-        .unwrap_or_trap("Unable to withdraw tokens: call failed")
+        .expect("Unable to withdraw tokens: call failed")
         .0
         .to_res()
-        .unwrap_or_trap("Unable to withdraw tokens: internal error");
-}
-
-#[update(guard = controller_guard)]
-pub async fn transfer(currency: Currency, to: Principal, amount: Nat) {
-    let state = get_state();
-    let token = token_id_by_currency(currency);
-
-    Dip20::transfer(&token, to, amount)
-        .await
-        .unwrap_or_trap("Unable to transfer tokens: call failed")
-        .0
-        .unwrap_or_trap("Unable to transfer tokens: internal error");
+        .expect("Unable to withdraw tokens: internal error");
 }
 
 #[update(guard = controller_guard)]
@@ -68,9 +55,9 @@ pub async fn mint_xtc_with_own_cycles(amount: u64) {
 
     XTC::mint(&state.xtc_canister, id(), amount)
         .await
-        .unwrap_or_trap("Unable to mint XTC with cycles: call failed")
+        .expect("Unable to mint XTC with cycles: call failed")
         .0
-        .unwrap_or_trap("Unable to mint XTC with cycles: internal error");
+        .expect("Unable to mint XTC with cycles: internal error");
 }
 
 #[update(guard = controller_guard)]
@@ -83,19 +70,18 @@ pub async fn burn_xtc_for_own_cycles(amount: u64) {
 
     XTC::burn(&state.xtc_canister, payload)
         .await
-        .unwrap_or_trap("Unable to burn XTC for cycles: call failed")
+        .expect("Unable to burn XTC for cycles: call failed")
         .0
-        .unwrap_or_trap("Unable to burn XTC for cycles: internal error");
+        .expect("Unable to burn XTC for cycles: internal error");
 }
 
 #[update]
 pub async fn my_token_balance(currency: Currency) -> Nat {
-    let state = get_state();
     let token = token_id_by_currency(currency);
 
     let (balance,) = Dip20::balance_of(&token, id())
         .await
-        .unwrap_or_trap("Unable to fetch my balance at token");
+        .expect("Unable to fetch my balance at token");
 
     balance
 }
@@ -107,7 +93,7 @@ pub async fn my_sonic_balance(currency: Currency) -> Nat {
 
     let (balance,) = Sonic::balance_of(&state.sonic_swap_canister, token.to_text(), id())
         .await
-        .unwrap_or_trap("Unable to fetch my balance at Sonic");
+        .expect("Unable to fetch my balance at Sonic");
 
     balance
 }
@@ -118,13 +104,13 @@ pub fn my_cycles_balance() -> u64 {
 }
 
 async fn get_swap_price_internal(give_currency: Currency, take_currency: Currency) -> BigDecimal {
-    let state = *get_state();
+    let state = get_state();
     let give_token = token_id_by_currency(give_currency);
     let take_token = token_id_by_currency(take_currency);
 
     let (pair_opt,) = Sonic::get_pair(&state.sonic_swap_canister, give_token, take_token)
         .await
-        .unwrap_or_trap("Unable to fetch pair at Sonic");
+        .expect("Unable to fetch pair at Sonic");
 
     let pair = pair_opt.unwrap();
 
@@ -143,11 +129,11 @@ pub async fn get_swap_price(give_currency: Currency, take_currency: Currency) ->
 
     let (give_token_decimals,) = Dip20::decimals(&give_token)
         .await
-        .unwrap_or_trap("Unable to fetch give_token decimals");
+        .expect("Unable to fetch give_token decimals");
 
     let (take_token_decimals,) = Dip20::decimals(&take_token)
         .await
-        .unwrap_or_trap("Unable to fetch take_token decimals");
+        .expect("Unable to fetch take_token decimals");
 
     let decimals_dif =
         give_token_decimals.to_i32().unwrap() - take_token_decimals.to_i32().unwrap();
@@ -175,17 +161,17 @@ pub async fn add_order(order: Order) -> Option<TaskId> {
             None
         }
         Order::Limit(limit_order) => {
-            // we need to somehow freeze tokens spent for limit orders
+            // TODO: we need to somehow freeze tokens spent for limit orders
 
             let task_id = cron_enqueue(
                 limit_order,
                 SchedulingInterval {
                     delay_nano: 0,
-                    interval_nano: 1_000_000_000 * 10, // check each 30 seconds,
+                    interval_nano: 1_000_000_000 * 10, // check each 10 seconds,
                     iterations: Iterations::Exact(1),
                 },
             )
-            .unwrap_or_trap("Unable to schedule a task");
+            .expect("Unable to schedule a task");
 
             Some(task_id)
         }
@@ -195,6 +181,7 @@ pub async fn add_order(order: Order) -> Option<TaskId> {
 #[heartbeat]
 pub fn tick() {
     for task in cron_ready_tasks() {
+        // we only have limit orders here
         let limit_order = task
             .get_payload::<LimitOrder>()
             .expect("Unable to parse limit order");
@@ -211,7 +198,7 @@ pub fn tick() {
                         iterations: Iterations::Exact(1),
                     },
                 )
-                .unwrap_or_trap("Unable to reschedule a task");
+                .expect("Unable to reschedule a task");
             }
         });
     }
@@ -277,10 +264,10 @@ async fn execute_market_order(order: MarketOrder) -> Nat {
                 deadline,
             )
             .await
-            .unwrap_or_trap("Unable to swap exact tokens: call failed")
+            .expect("Unable to swap exact tokens: call failed")
             .0
             .to_res()
-            .unwrap_or_trap("Unable to swap exact tokens: internal error")
+            .expect("Unable to swap exact tokens: internal error")
         }
         OrderDirective::TakeExact(take_amount) => {
             let take_amount_bd = BigDecimal::from(take_amount.0.to_bigint().unwrap());
@@ -301,10 +288,10 @@ async fn execute_market_order(order: MarketOrder) -> Nat {
                 deadline,
             )
             .await
-            .unwrap_or_trap("Unable to swap to exact tokens: call failed")
+            .expect("Unable to swap to exact tokens: call failed")
             .0
             .to_res()
-            .unwrap_or_trap("Unable to swap exact tokens: internal error")
+            .expect("Unable to swap exact tokens: internal error")
         }
     }
 }
@@ -321,8 +308,8 @@ pub struct State {
 
 pub static mut STATE: Option<State> = None;
 
-pub fn get_state() -> &'static mut State {
-    unsafe { STATE.as_mut().unwrap() }
+pub fn get_state() -> &'static State {
+    unsafe { STATE.as_ref().unwrap() }
 }
 
 #[init]
@@ -341,7 +328,7 @@ pub fn init(controller: Principal) {
 pub fn pre_upgrade_hook() {
     unsafe {
         stable_save((STATE.unwrap(), get_cron_state().clone()))
-            .unwrap_or_trap("Unable to save the state to stable memory");
+            .expect("Unable to save the state to stable memory");
     }
 }
 
@@ -349,7 +336,7 @@ pub fn pre_upgrade_hook() {
 pub fn post_upgrade_hook() {
     unsafe {
         let (state, cron_state) =
-            stable_restore().unwrap_or_trap("Unable to restore the state from stable memory");
+            stable_restore().expect("Unable to restore the state from stable memory");
 
         STATE = Some(state);
         set_cron_state(cron_state);

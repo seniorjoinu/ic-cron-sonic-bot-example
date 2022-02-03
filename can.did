@@ -1,14 +1,3 @@
-type RemoteCallEndpoint = record {
-    canister_id : principal;
-    method_name : text;
-};
-
-type RemoteCallPayload = record {
-    endpoint : RemoteCallEndpoint;
-    args_raw : blob;
-    cycles : nat64;
-};
-
 type Currency = variant {
     XTC;
     WICP;
@@ -41,11 +30,10 @@ type Order = variant {
 };
 
 service : {
-    "proxy_call" : (RemoteCallPayload) -> ();
     "deposit" : (Currency, nat) -> ();
     "withdraw" : (Currency, nat) -> ();
-    "transfer" : (Currency, principal, nat) -> ();
     "mint_xtc_with_own_cycles" : (nat64) -> ();
+    "burn_xtc_for_own_cycles" : (nat64) -> ();
     "my_token_balance" : (Currency) -> (nat);
     "my_sonic_balance" : (Currency) -> (nat);
     "my_cycles_balance" : () -> (nat64) query;

@@ -18,7 +18,7 @@ pub enum XTCBurnError {
 
 pub type XTCBurnResult = Result<Nat, XTCBurnError>;
 
-#[derive(CandidType, Deserialize)]
+#[derive(CandidType, Deserialize, Debug)]
 pub enum XTCMintError {
     NotSufficientLiquidity,
 }
